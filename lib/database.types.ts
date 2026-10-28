@@ -45,6 +45,8 @@ export type Database = {
       ad_conversion_dispatches: {
         Row: {
           attempted_at: string;
+          claim_token: string | null;
+          claimed_until: string | null;
           created_at: string;
           currency: string | null;
           detail: string | null;
@@ -67,6 +69,8 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           attempted_at?: string;
+          claim_token?: string | null;
+          claimed_until?: string | null;
           created_at?: string;
           currency?: string | null;
           detail?: string | null;
@@ -88,6 +92,8 @@ export type Database = {
         };
         Update: {
           attempted_at?: string;
+          claim_token?: string | null;
+          claimed_until?: string | null;
           created_at?: string;
           currency?: string | null;
           detail?: string | null;
@@ -9522,6 +9528,7 @@ export type Database = {
       job_queue: {
         Row: {
           attempts: number;
+          catalog_presentation_snapshot: Json | null;
           contact_id: string | null;
           created_at: string;
           id: string;
@@ -9540,6 +9547,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           attempts?: number;
+          catalog_presentation_snapshot?: Json | null;
           contact_id?: string | null;
           created_at?: string;
           id?: string;
@@ -9557,6 +9565,7 @@ export type Database = {
         };
         Update: {
           attempts?: number;
+          catalog_presentation_snapshot?: Json | null;
           contact_id?: string | null;
           created_at?: string;
           id?: string;
@@ -10725,6 +10734,76 @@ export type Database = {
           },
         ];
       };
+      meta_ctwa_click_dispatches: {
+        Row: {
+          activation_at_capture: string | null;
+          attempted_at: string | null;
+          captured_at: string;
+          claim_token: string | null;
+          claimed_until: string | null;
+          contact_id: string;
+          created_at: string;
+          ctwa_clid: string;
+          detail: string | null;
+          event_id: string;
+          first_message_id: string;
+          id: string;
+          organization_id: string;
+          reason: string | null;
+          status: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          activation_at_capture?: string | null;
+          attempted_at?: string | null;
+          captured_at: string;
+          claim_token?: string | null;
+          claimed_until?: string | null;
+          contact_id: string;
+          created_at?: string;
+          ctwa_clid: string;
+          detail?: string | null;
+          event_id: string;
+          first_message_id: string;
+          id?: string;
+          organization_id: string;
+          reason?: string | null;
+          status?: string;
+        };
+        Update: {
+          activation_at_capture?: string | null;
+          attempted_at?: string | null;
+          captured_at?: string;
+          claim_token?: string | null;
+          claimed_until?: string | null;
+          contact_id?: string;
+          created_at?: string;
+          ctwa_clid?: string;
+          detail?: string | null;
+          event_id?: string;
+          first_message_id?: string;
+          id?: string;
+          organization_id?: string;
+          reason?: string | null;
+          status?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "meta_ctwa_click_dispatches_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "meta_ctwa_click_dispatches_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       meta_templates: {
         Row: {
           category: string | null;
@@ -11334,6 +11413,7 @@ export type Database = {
           mcp_externo_chave_tag: string | null;
           media_retention_days: number;
           media_retention_enforced: boolean;
+          meta_lead_birth_enabled_at: string | null;
           onboarded_at: string | null;
           onboarding_state: NonNullable<Json>;
           privacy_policy_url: string | null;
@@ -11370,6 +11450,7 @@ export type Database = {
           mcp_externo_chave_tag?: string | null;
           media_retention_days?: number;
           media_retention_enforced?: boolean;
+          meta_lead_birth_enabled_at?: string | null;
           onboarded_at?: string | null;
           onboarding_state?: NonNullable<Json>;
           privacy_policy_url?: string | null;
@@ -11405,6 +11486,7 @@ export type Database = {
           mcp_externo_chave_tag?: string | null;
           media_retention_days?: number;
           media_retention_enforced?: boolean;
+          meta_lead_birth_enabled_at?: string | null;
           onboarded_at?: string | null;
           onboarding_state?: NonNullable<Json>;
           privacy_policy_url?: string | null;
@@ -13010,6 +13092,7 @@ export type Database = {
           dispatched_at: string;
           disputa_de_banco: boolean | null;
           finished_at: string | null;
+          force_requested: boolean;
           from_version: string;
           id: string;
           last_step: string | null;
@@ -13025,6 +13108,7 @@ export type Database = {
           dispatched_at?: string;
           disputa_de_banco?: boolean | null;
           finished_at?: string | null;
+          force_requested?: boolean;
           from_version?: string;
           id?: string;
           last_step?: string | null;
@@ -13039,6 +13123,7 @@ export type Database = {
           dispatched_at?: string;
           disputa_de_banco?: boolean | null;
           finished_at?: string | null;
+          force_requested?: boolean;
           from_version?: string;
           id?: string;
           last_step?: string | null;
@@ -13062,6 +13147,7 @@ export type Database = {
           id: number;
           latest_version: string;
           off_release: boolean;
+          runtime_confirmation: Json | null;
           update_requested_at: string | null;
           update_requested_by: string | null;
           updated_at: string;
@@ -13077,6 +13163,7 @@ export type Database = {
           id?: number;
           latest_version?: string;
           off_release?: boolean;
+          runtime_confirmation?: Json | null;
           update_requested_at?: string | null;
           update_requested_by?: string | null;
           updated_at?: string;
@@ -13091,6 +13178,7 @@ export type Database = {
           id?: number;
           latest_version?: string;
           off_release?: boolean;
+          runtime_confirmation?: Json | null;
           update_requested_at?: string | null;
           update_requested_by?: string | null;
           updated_at?: string;
@@ -14774,6 +14862,8 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      fn_claim_meta_ctwa_click: { Args: { p_click: string; p_org: string }; Returns: Json };
+      fn_claim_meta_lead_submitted: { Args: { p_lead: string; p_org: string }; Returns: Json };
       fn_cobranca_avisar_teto_de_ia: {
         Args: { p_corpo: string; p_org: string; p_titulo: string };
         Returns: boolean;
@@ -14967,6 +15057,7 @@ export type Database = {
         Args: { p_actor: string; p_marca: Json; p_org: string };
         Returns: number;
       };
+      fn_definir_meta_lead_birth: { Args: { p_enabled: boolean; p_org: string }; Returns: string };
       fn_definir_pausa_de_canal: {
         Args: {
           p_agenda: string;
@@ -15365,6 +15456,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      fn_meta_ctwa_click_enviado_legado: {
+        Args: { p_clid: string; p_org: string };
+        Returns: boolean;
+      };
       fn_metricas_links_rastreaveis: {
         Args: { p_org: string };
         Returns: {
@@ -15401,6 +15496,21 @@ export type Database = {
           p_source_metadata?: Json;
           p_stage: string;
           p_tags?: string[];
+          p_title: string;
+        };
+        Returns: string;
+      };
+      fn_nascer_lead_da_mensagem: {
+        Args: {
+          p_contact: string;
+          p_conversation: string;
+          p_message: string;
+          p_org: string;
+          p_pipeline: string;
+          p_source: string;
+          p_source_metadata: Json;
+          p_stage: string;
+          p_tags: string[];
           p_title: string;
         };
         Returns: string;
@@ -15710,10 +15820,36 @@ export type Database = {
         };
         Returns: Json;
       };
+      fn_settle_meta_ctwa_click: {
+        Args: {
+          p_click: string;
+          p_detail: string;
+          p_org: string;
+          p_reason: string;
+          p_status: string;
+          p_token: string;
+        };
+        Returns: boolean;
+      };
+      fn_settle_meta_lead_submitted: {
+        Args: {
+          p_detail: string;
+          p_lead: string;
+          p_org: string;
+          p_reason: string;
+          p_status: string;
+          p_token: string;
+        };
+        Returns: boolean;
+      };
       fn_situacao_conta_como_atendimento: { Args: { p_status: string }; Returns: boolean };
       fn_solicitar_reenvio_conversao:
         | { Args: { p_lead: string; p_org: string }; Returns: boolean }
         | { Args: { p_event: string; p_lead: string; p_org: string }; Returns: boolean };
+      fn_solicitar_reenvio_meta_ctwa_click: {
+        Args: { p_click: string; p_org: string };
+        Returns: boolean;
+      };
       fn_start_support: {
         Args: {
           p_actor: string;
