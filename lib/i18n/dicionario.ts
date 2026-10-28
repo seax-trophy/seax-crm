@@ -270,6 +270,33 @@ export const DICIONARIO: Traducoes = {
 
   // Contexto opcional do roteador do Jev.
 
+  "Enviar LeadSubmitted por clique CTWA à Meta": {
+    es: "Enviar LeadSubmitted a Meta por clic CTWA",
+  },
+  "Quando alguém clicar em um anúncio Click-to-WhatsApp e efetivamente enviar uma mensagem, o sistema poderá registrar um LeadSubmitted na Meta. Apenas abrir a conversa não gera conversão.":
+    {
+      es: "Cuando alguien haga clic en un anuncio Click-to-WhatsApp y llegue a enviar un mensaje, el sistema podrá registrar un LeadSubmitted en Meta. Solo abrir la conversación no genera una conversión.",
+    },
+  "Não foi possível ler a ativação de LeadSubmitted. Atualize a página para tentar novamente.": {
+    es: "No se pudo leer la activación de LeadSubmitted. Actualiza la página e inténtalo de nuevo.",
+  },
+  "LeadSubmitted por clique CTWA": { es: "LeadSubmitted por clic CTWA" },
+  "Últimos 20 cliques recebidos. O mesmo contato pode aparecer mais de uma vez sem criar outro negócio.":
+    {
+      es: "Últimos 20 clics recibidos. El mismo contacto puede aparecer varias veces sin crear otro negocio.",
+    },
+  "Nenhum clique CTWA registrado.": { es: "No hay clics CTWA registrados." },
+  "Primeira mensagem": { es: "Primer mensaje" },
+  "Não consegui ler o histórico de cliques agora. Atualize a página em instantes.": {
+    es: "No pude leer el historial de clics. Actualiza la página en unos momentos.",
+  },
+  "Enviar nascimento de leads de anúncio à Meta": { es: "Enviar a Meta el nacimiento de leads de anuncios" },
+  "Desligado por padrão. Ao ligar, apenas leads novos vindos de um clique em anúncio Click-to-WhatsApp poderão gerar LeadSubmitted. Desligar não pausa compras nem eventos de etapa.": { es: "Desactivado por defecto. Al activarlo, solo los leads nuevos procedentes de un clic en un anuncio Click-to-WhatsApp podrán generar LeadSubmitted. Desactivarlo no pausa las compras ni los eventos de etapa." },
+  "Não foi possível ler a ativação do nascimento de leads. Atualize a página para tentar novamente.": { es: "No se pudo leer la activación del nacimiento de leads. Actualiza la página e inténtalo de nuevo." },
+  // Conversão causal de nascimento CTWA e fato distinto de entrada na etapa.
+  "Nascimento por anúncio": { es: "Nacimiento por anuncio" },
+  "Entrada na etapa": { es: "Entrada en la etapa" },
+  "Leads de anúncio Click-to-WhatsApp elegíveis já informam o nascimento. Esta regra informa separadamente a entrada nesta etapa.": { es: "Los leads elegibles de anuncios Click-to-WhatsApp ya informan el nacimiento. Esta regla informa por separado la entrada en esta etapa." },
   // ─── EMPRESAS, PESSOAS E IMPORTAÇÃO (metade B2B do #1621, de @renatofortal) ───
   "Arquivo": {"es": "Archivo"},
   "Atualizado": {"es": "Actualizado"},
@@ -632,7 +659,7 @@ export const DICIONARIO: Traducoes = {
   "A plataforma recebeu o envio. A confirmação será consultada automaticamente.": { es: "La plataforma recibió el envío. La confirmación se consultará automáticamente." },
   "A plataforma não concluiu em 24 horas. Consulte o gerenciador e use o botão para verificar novamente.": { es: "La plataforma no terminó en 24 horas. Consulta el administrador y usa el botón para verificar de nuevo." },
   "Falha temporária. Uma nova tentativa foi agendada automaticamente.": { es: "Fallo temporal. Se programó automáticamente un nuevo intento." },
-  "Evento recebido em modo de teste. Desative o teste antes de reportar a venda real.": { es: "Evento recibido en modo de prueba. Desactiva la prueba antes de reportar la venta real." },
+  "Evento recebido em modo de teste. Desative o teste antes de reportar conversões reais.": { es: "Evento recibido en modo de prueba. Desactiva la prueba antes de reportar conversiones reales." },
   "A venda fechou sem valor preenchido. A plataforma exige valor e moeda em uma compra — preencha o valor do negócio e use o botão de reprocessamento.": { es: "La venta se cerró sin importe. La plataforma exige importe y moneda en una compra: completa el valor del negocio y usa el botón para reprocesar." },
 
   // Conversões de anúncios: recebimento, diagnóstico e recuperação.
@@ -7513,6 +7540,13 @@ export const DICIONARIO: Traducoes = {
   "O sistema sai do ar por cerca de 2 minutos e volta sozinho. Faço uma cópia de segurança dos seus dados antes.": {
     es: "El sistema queda fuera de servicio unos 2 minutos y vuelve solo. Antes hago una copia de seguridad de tus datos.",
   },
+  // O atalho do estado de falha (#2756): o MESMO `--force` que a tela mostra
+  // logo embaixo, em `<Comando>`.
+  "Forçar atualização": { es: "Forzar actualización" },
+  "Forçando…": { es: "Forzando…" },
+  "Rodo o comando de baixo por você, sem precisar abrir o terminal. Faço uma cópia de segurança dos seus dados antes.": {
+    es: "Ejecuto el comando de abajo por ti, sin necesidad de abrir una terminal. Antes hago una copia de seguridad de tus datos.",
+  },
   // O um-clique de voltar (#2757) — o "2 minutos" não é promessa de tempo de
   // execução, é o mesmo aviso do botão de atualizar, agora com o destino dito.
   "Voltar para a versão anterior": { es: "Volver a la versión anterior" },
@@ -8336,6 +8370,9 @@ export const DICIONARIO: Traducoes = {
   Anexar: { es: "Adjuntar" },
   "Fotos e vídeos": { es: "Fotos y videos" },
   Documento: { es: "Documento" },
+  // Cartão do documento sem nome original (#2613): a extensão identificada como
+  // extensão. `{ext}` é PDF/XLSX/…, e o espanhol usa a mesma palavra.
+  "Documento {ext}": { es: "Documento {ext}" },
   "Enviar anexo": { es: "Enviar adjunto" },
   "Legenda (opcional)": { es: "Descripción (opcional)" },
   Legenda: { es: "Descripción" },
@@ -9446,6 +9483,17 @@ export const DICIONARIO: Traducoes = {
     es: "No hay contactos con ese nombre o teléfono.",
   },
   "Contato criado": { es: "Contacto creado" },
+  // #3483 — o cadastro que já abre a conversa. As duas frases novas são do
+  // caminho de salvar-e-abrir: uma quando o contato salvo não tem telefone
+  // (não há thread 1:1 para abrir) e outra no funil, onde o negócio pode
+  // nascer sem pessoa nenhuma.
+  "Salvar e iniciar conversa": { es: "Guardar e iniciar conversa" },
+  "Contato salvo. Cadastre um telefone para abrir a conversa.": {
+    es: "Contacto guardado. Registra un teléfono para abrir la conversación.",
+  },
+  "Escolha um contato para abrir a conversa.": {
+    es: "Elige un contacto para abrir la conversación.",
+  },
   "Não foi possível carregar as sugestões agora.": { es: "No se pudieron cargar las sugerencias en este momento." },
   "Não foi possível registrar a decisão.": { es: "No se pudo registrar la decisión." },
   "O assistente ouviu isto na conversa": { es: "El asistente escuchó esto en la conversación" },
@@ -17437,7 +17485,6 @@ export const DICIONARIO: Traducoes = {
   "Telefone ou nome do contato": { es: "Teléfono o nombre del contacto" },
   "Contato existente": { es: "Contacto existente" },
   "Como o contato aparece no CRM": { es: "Cómo aparece el contacto en el CRM" },
-  "Primeira mensagem": { es: "Primer mensaje" },
   "O que dizer ao contato (opcional)": { es: "Qué decirle al contacto (opcional)" },
   "Usar modelo de mensagem": { es: "Usar plantilla de mensaje" },
   "A conversa abre atribuída a você: a IA não assume este atendimento.": {
@@ -18038,6 +18085,30 @@ export const DICIONARIO: Traducoes = {
   },
   "Parâmetro inválido.": {
     es: "Parámetro no válido.",
+  },
+  'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
+    es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
+  },
+  // Installed runtime identity, distinct from an available release.
+  "Versão ainda não confirmada": { es: "Versión aún no confirmada" },
+  "Execução não confirmada": { es: "Ejecución no confirmada" },
+  "Versão instalada": { es: "Versión instalada" },
+  "Ainda não confirmada": { es: "Aún no confirmada" },
+  "Última confirmação": { es: "Última confirmación" },
+  "Instalação personalizada": { es: "Instalación personalizada" },
+  "Esta instalação preserva alterações próprias sobre a base oficial.": { es: "Esta instalación conserva cambios propios sobre la base oficial." },
+  "Concilie as alterações antes de trocar as imagens. A versão publicada não substitui automaticamente esta instalação.": { es: "Concilie los cambios antes de cambiar las imágenes. La versión publicada no sustituye automáticamente esta instalación." },
+  "A execução dos serviços ainda não foi confirmada. Aguarde a próxima verificação do servidor.": { es: "La ejecución de los servicios aún no se ha confirmado. Espere la próxima verificación del servidor." },
+  "Esta instalação é personalizada. Concilie as alterações antes de trocar as imagens.": { es: "Esta instalación está personalizada. Concilie los cambios antes de cambiar las imágenes." },
+  "Não há atualização posterior confirmada para esta instalação.": { es: "No hay una actualización posterior confirmada para esta instalación." },
+  "A última tentativa falhou. O estado instalado aparece na confirmação dos serviços acima.": { es: "El último intento falló. El estado instalado aparece en la confirmación de los servicios de arriba." },
+  "Confira a execução e preserve as alterações próprias antes de trocar as imagens.": { es: "Compruebe la ejecución y conserve los cambios propios antes de cambiar las imágenes." },
+  "Os serviços executam revisões diferentes": { es: "Los servicios ejecutan revisiones diferentes" },
+  "A confirmação do servidor venceu": { es: "La confirmación del servidor ha caducado" },
+  "Não confirmado": { es: "No confirmado" },
+  "Última release oficial": { es: "Última versión oficial publicada" },
+  "O agente do servidor ainda não confirmou suporte para refazer a atualização pela tela.": {
+    es: "El agente del servidor aún no ha confirmado soporte para repetir la actualización desde esta pantalla.",
   },
 };
 
