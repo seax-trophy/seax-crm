@@ -328,6 +328,22 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
     painelEm: "/app/team",
   },
+  {
+    modulo: "avisos",
+    id: "modulo-avisos",
+    rotulo: "Avisos para a equipe",
+    descricao:
+      "Ligado, o administrador de cada empresa pode escrever um aviso com título e texto, e ele chega como notificação nos aparelhos da equipe que ativaram as notificações. Desligado, ninguém envia avisos; os já enviados ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.",
+  },  {
+    modulo: "conferir_whatsapp",
+    id: "modulo-conferir-whatsapp",
+    rotulo: "Conferir WhatsApp na prospecção",
+    descricao:
+      "Ligado, a prospecção pergunta ao WhatsApp, pela conexão por QR da empresa, se cada telefone achado numa busca tem conta, e quem não tem sai da abordagem. A pergunta sai do número da empresa, para todo telefone achado, a qualquer hora; consulta em massa assim pode chamar a atenção do WhatsApp e arriscar o número. Desligado, nada é consultado e a abordagem segue como antes.",
+    foraDoMenu: "Não cria porta no menu do CRM: a conferência aparece na lista de empresas em",
+    painelEm: "/app/prospecting",
+  },
 ];
 
 /**

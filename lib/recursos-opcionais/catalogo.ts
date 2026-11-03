@@ -146,6 +146,13 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     oQueFaz:
       "Agrupa os atendentes da Equipe por área e distribui as conversas que têm setor definido entre quem atende aquela área, dentro do horário do setor. Conversa sem setor continua indo pelo número, como antes.",
   },
+  avisos: {
+    nome: "Avisos para a equipe",
+    oQueFaz: "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.",
+  },  conferir_whatsapp: {
+    nome: "Conferir WhatsApp na prospecção",
+    oQueFaz: "Antes de abordar, pergunta ao WhatsApp se o telefone da empresa achada tem conta, e tira da abordagem quem não tem.",
+  },
 };
 
 /**
