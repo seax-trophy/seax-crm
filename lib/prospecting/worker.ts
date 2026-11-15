@@ -24,7 +24,11 @@ import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { assertProspectingContinuation, assertProspectingDelivery } from "./guard";
+import {
+  assertProspectingContinuation,
+  assertProspectingDelivery,
+  vetoDoContatoAntesDaVaga,
+} from "./guard";
 import { instrucaoDeAbordagemFria, montarDadosDeAbordagem, estrategiaDoCandidato } from "./estrategia-site";
 import {
   INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN,
@@ -38,6 +42,7 @@ import { prepararCandidatos } from "./preparo";
 import { provedoresQueConferemNumero } from "@/lib/channels";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { CanalReconectandoError, ProspectingError } from "./provider";
+import { mensagemDaRecusaDoCanal } from "./motivo-da-pausa";
 import { canalDaCampanha } from "./canal-da-campanha";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
@@ -258,7 +263,11 @@ export async function sendNextCandidate(
     contactPhoneNumber: queued.phone ?? "",
   });
   if (!preflight.permite)
-    throw new ProspectingError(`O canal ainda não permite esta abordagem: ${preflight.motivo}.`);
+    // O motivo que o preflight devolve é vocabulário de código
+    // (`fora_da_lista_de_teste`): vai para a tela traduzido por um mapa único
+    // (`./motivo-da-pausa.ts`, #4170). Motivo sem frase própria continua
+    // saindo cru — o comportamento de antes.
+    throw new ProspectingError(mensagemDaRecusaDoCanal(preflight.motivo));
   // MODO `on_send`: a empresa está na fila, mas ainda NÃO existe no CRM — contato,
   // negócio e conversa nascem agora, na vez dela de ser abordada. Se ela saiu da fila
   // no caminho (virou contato por outro lado, ou o CRM recusou o cadastro), não houve
@@ -286,6 +295,25 @@ export async function sendNextCandidate(
       422,
       "candidato",
     );
+  // A MARCA DO CONTATO é conferida ANTES de reservar a vaga do número. A guarda
+  // cheia, mais abaixo, vem depois da transação que grava `attempted_at`, o
+  // intervalo e o `recordSend`: sem esta leitura, cada empresa vetada gastaria
+  // uma vaga do teto diário e do aquecimento, mais um intervalo inteiro, sem
+  // mandar nada. Aqui ela sai `failed` com o motivo e SEM `attempted_at` (não
+  // houve tentativa), e a próxima rodada pega a seguinte sem esperar.
+  const vetoAntes = await vetoDoContatoAntesDaVaga(admin, c.organization_id, p.contact_id);
+  if (vetoAntes) {
+    await db.query(
+      "update prospecting_candidates set status='failed',error=$3,updated_at=now() where organization_id=$1 and id=$2 and status='queued'",
+      [c.organization_id, p.id, vetoAntes],
+    );
+    logger.warn("[prospecting] contato vetado antes de reservar a vaga; a campanha segue", {
+      organization_id: c.organization_id,
+      campaign_id: c.id,
+      error: vetoAntes,
+    });
+    return;
+  }
   await db.query("begin");
   try {
     await db.query(
@@ -393,6 +421,16 @@ export async function sendNextCandidate(
     });
     if (!authorization.ok)
       throw new ProspectingError("Não foi possível preparar o atendimento da resposta.");
+    // `ok` é "o banco respondeu"; `autorizou` é "a IA pode assumir". Com
+    // `ai_opt_out` ("sempre atendimento humano") o update casa 0 linhas e volta
+    // `{ok:true, autorizou:false}` — e só olhar `ok` mandava a abordagem a quem a
+    // operação trancou. A recusa é DESTE contato: a campanha segue.
+    if (authorization.autorizou === false)
+      throw new ProspectingError(
+        "A IA não pode atender este contato.",
+        409,
+        "candidato",
+      );
     // A SAÍDA é montada aqui — não pedida ao modelo — e vai JUNTO DA PRIMEIRA
     // BOLHA quando a CAMPANHA manda oferecê-la aí (`exit_offer`, migration 0705:
     // ver o `if` depois de `splitForSend`). Sem ela, a saída que a pessoa usa é
@@ -434,7 +472,11 @@ export async function sendNextCandidate(
     // (é o `context.ts` que manda o agente só cumprimentar na primeira). Pôr o
     // rodapé aqui incondicionalmente ofereceria a saída DUAS vezes — e na
     // mensagem que o operador não escolheu.
-    if (cfg.exit_offer === "first_message") baloes[0] = comSaida(baloes[0]!, locale);
+    // O TEXTO é da campanha (`config.texto_da_saida`, #4370) e não do modelo:
+    // vazio cai na frase padrão de sempre, e texto sem a palavra que o detector
+    // reconhece é trocado pelo padrão em `rodape-de-saida.ts` — a saída não pode
+    // depender da redação ter dado certo.
+    if (cfg.exit_offer === "first_message") baloes[0] = comSaida(baloes[0]!, locale, cfg.texto_da_saida);
     let mensagem: Message | undefined;
     let falhouEm: Message | undefined;
     /** A conversa deixou de ser fria ENTRE bolhas: a pessoa respondeu ou um humano assumiu. */

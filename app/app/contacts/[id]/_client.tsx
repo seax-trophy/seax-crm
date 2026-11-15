@@ -46,18 +46,22 @@ import { EditContactDialog } from "@/components/contacts/EditContactDialog";
 import { JuntarComOutraFicha } from "@/components/contacts/JuntarComOutraFicha";
 import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
+import { NiveisDaOrigem } from "@/components/contacts/NiveisDaOrigem";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
-import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
+import { nomeDoContato, rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { TelefonesDaFicha } from "@/components/contacts/TelefonesDaFicha";
 import { DialButton } from "@/components/voice/DialButton";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
+import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
+import { DiagnosticoDoContato } from "@/components/contacts/DiagnosticoDoContato";
+import { podeEditarDiagnostico } from "@/lib/contacts/diagnostico-do-contato";
 
 interface Props {
   contactId: string;
@@ -65,27 +69,17 @@ interface Props {
   paineisDeModulo?: { modulo: string; objeto: string }[];
   /** Módulo opcional `mcp_por_agente` ligado (doc 252). Ausente = desligado. */
   acessosMcp?: boolean;
+  /** Módulo opcional `crm_b2b` ligado (doc 68, issue #3198). Ausente = desligado. */
+  b2b?: boolean;
 }
 
-/**
- * Um nível da origem, ou nada.
- *
- * Escondido quando não há valor, em vez de mostrar "—": quatro travessões
- * seguidos leem como cadastro quebrado, e não como "este contato não veio de
- * campanha". O rótulo chega já traduzido porque `t()` com argumento não literal
- * escapa do guardião de espanhol.
- */
-function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null }) {
-  if (!valor) return null;
-  return (
-    <div>
-      <dt className="text-xs uppercase text-muted-foreground">{rotulo}</dt>
-      <dd className="mt-1 break-words">{valor}</dd>
-    </div>
-  );
-}
 
-export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMcp = false }: Props) {
+export function ContactDetailClient({
+  contactId,
+  paineisDeModulo = [],
+  acessosMcp = false,
+  b2b = false,
+}: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
@@ -134,7 +128,8 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMc
   const temAnuncio =
     typeof metadataDoContato.ad_id === "string" && metadataDoContato.ad_id.trim() !== "";
   const jaTemNome = typeof metadataDoContato.campaign_name === "string";
-  const hierarquia = useHierarquiaDoAnuncio(contactId, temAnuncio && !jaTemNome);
+  const origemGoogle = (metadataDoContato.ad_platform ?? q.data?.data.source) === "google_ads";
+  const hierarquia = useHierarquiaDoAnuncio(contactId, !origemGoogle && temAnuncio && !jaTemNome);
 
   if (q.isLoading) {
     return (
@@ -178,7 +173,7 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMc
   // `adset_name`, `ad_name`) são exatamente as que `origemDoContato` já lê, no
   // degrau abaixo da UTM. Uma regra de precedência só, e ela já estava escrita.
   const origem = origemDoContato(
-    hierarquia.data
+    !origemGoogle && hierarquia.data
       ? { ...(contact.source_metadata ?? {}), ...hierarquia.data }
       : contact.source_metadata,
     contact.source,
@@ -406,6 +401,7 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMc
         <TabsList>
           <TabsTrigger value="overview">{t("Visão geral")}</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="diagnostico">{t("Diagnóstico")}</TabsTrigger>
           {isAdmin && <TabsTrigger value="lgpd">LGPD</TabsTrigger>}
         </TabsList>
 
@@ -497,20 +493,7 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMc
                   </dd>
                 )}
               </div>
-              <NivelDaOrigem rotulo={t("Campanha")} valor={origem.campanha} />
-              <NivelDaOrigem rotulo={t("Conjunto")} valor={origem.conjunto} />
-              <NivelDaOrigem rotulo={t("Anúncio")} valor={origem.anuncio} />
-              <NivelDaOrigem rotulo={t("Posicionamento")} valor={origem.posicionamento} />
-              {origem.semPosicionamentoDeAnuncio && (
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">
-                    {t("Posicionamento")}
-                  </dt>
-                  <dd className="mt-1 text-sm text-muted-foreground">
-                    {t("A plataforma não informa o posicionamento de cada clique em anúncio.")}
-                  </dd>
-                </div>
-              )}
+              <NiveisDaOrigem origem={origem} />
               <div>
                 <dt className="text-xs uppercase text-muted-foreground">{t("Última atividade")}</dt>
                 <dd className="mt-1">
@@ -557,6 +540,27 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMc
               </div>
             </dl>
           </Card>
+          {/* DE QUEM É ESTE TELEFONE (issue #3198): só com o módulo "Empresas e
+              pessoas" ligado. Desligado, nada é montado e nenhuma rota B2B é
+              chamada — a ficha fica exatamente como era. Logo abaixo dos dados do
+              contato, antes da Carteira: no B2B, "quem é e de que empresa" vem
+              antes de "quem atende". */}
+          {b2b && !contact.is_anonymized && (
+            <div className="mt-4">
+              <PessoaDoContato
+                contactId={contactId}
+                podeEditar={Boolean(
+                  (user.is_platform_admin && !user.support) ||
+                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+                )}
+                podeCriarPessoa={Boolean(
+                  (user.is_platform_admin && !user.support) ||
+                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager),
+                )}
+                nomeSugerido={nomeDoContato(contact) ?? ""}
+              />
+            </div>
+          )}
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
               geral, junto dos dados que dizem "quem é esta pessoa" — quem atende
               responde a pergunta antes de prometer o negócio, e o seletor de dono
@@ -598,6 +602,18 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMc
 
         <TabsContent value="timeline" className="mt-4">
           <TimelineView contactId={contactId} />
+        </TabsContent>
+
+        {/* Os dados da EMPRESA que a prospecção usa (segmento, CNPJ, links,
+            diagnóstico e oferta). Lidos e gravados só pelo esquema central,
+            lib/contacts/diagnostico-do-contato.ts. */}
+        <TabsContent value="diagnostico" className="mt-4">
+          <DiagnosticoDoContato
+            key={contact.updated_at}
+            contato={contact}
+            usuarioId={user.id}
+            podeEditar={podeEditarDiagnostico(contact, user, activeOrg?.role)}
+          />
         </TabsContent>
 
         {isAdmin && (

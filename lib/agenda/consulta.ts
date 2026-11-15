@@ -562,7 +562,7 @@ export interface AgendamentoListado {
    * marcado antes do cadastro do tipo. Inventar um aqui faria um calendário
    * externo mostrar "Consulta" para um bloco que ninguém marcou. (issue #1744)
    */
-  tipo?: { slug: string; nome: string } | null;
+  tipo?: { id: string; slug: string; nome: string } | null;
   /**
    * COMO e ONDE se atende — o mesmo par `location_kind`/`location_details` que
    * `lib/agenda/locais.ts` rotula na tela. Entrego os VALORES, não o rótulo:
@@ -585,7 +585,7 @@ export interface AgendamentoListado {
    * explica por que ele aparece na agenda de quem não é o dono.
    */
   convidadosDaEquipe?: string[];
-  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string };
+  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string; pessoas: number };
 }
 
 export interface ParametrosDaLista {
@@ -745,7 +745,7 @@ async function fusoDaOrganizacao(
  * `null` quando o fuso é inexistente (`instanteDe` lança `RangeError`) — quem
  * chama cai no corte em UTC.
  */
-function janelaDoDiaNoFuso(dia: string, fuso: string): { de: string; ate: string } | null {
+export function janelaDoDiaNoFuso(dia: string, fuso: string): { de: string; ate: string } | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dia);
   if (!m) return null;
   const [ano, mes, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
@@ -904,7 +904,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids",
+      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -1048,7 +1048,7 @@ export async function listaAgendamentos(
       // aviso de `contatoDoEmbed`, aqui de novo porque é o MESMO embed.
       const tipo = (Array.isArray(l.calendar_event_types)
         ? (l.calendar_event_types[0] ?? null)
-        : (l.calendar_event_types ?? null)) as { name?: unknown; slug?: unknown } | null;
+        : (l.calendar_event_types ?? null)) as { id?: unknown; name?: unknown; slug?: unknown } | null;
       const texto = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
       return {
         id: String(l.id),
@@ -1068,7 +1068,7 @@ export async function listaAgendamentos(
         // produto lê, e a MESMA decisão de nome — `lib/contacts/rotulo-do-contato.ts`,
         // não um precedente copiado de outro arquivo.
         contatoNome: contatoDoEmbed(l.contacts),
-        tipo: tipo ? { slug: texto(tipo.slug) ?? "", nome: texto(tipo.name) ?? "" } : null,
+        tipo: tipo ? { id: String(tipo.id), slug: texto(tipo.slug) ?? "", nome: texto(tipo.name) ?? "" } : null,
         local: { tipo: texto(l.location_kind), descricao: texto(l.location_details) },
         leadIds: vinculosPorAlvo?.get(String(l.id)) ?? [],
         convidadosDaEquipe: Array.isArray(l.team_guest_user_ids)
@@ -1076,6 +1076,7 @@ export async function listaAgendamentos(
           : [],
         ...(l.service_occurrence_id ? { servico: { occurrence_id: String(l.service_occurrence_id), participant_name: texto(l.participant_name),
           booking_mode: String(l.service_booking_mode), capacity_limit: l.service_capacity_limit == null ? null : Number(l.service_capacity_limit),
+          pessoas: Number(l.service_party_size ?? 1),
           google_publication: l.service_publication_mode === "none" ? "not_configured" : l.google_conflict ? "conflict" : l.google_sync_error ? "failed"
             : l.google_event_id && l.google_synced_local_revision === l.google_local_revision ? l.status === "cancelled" ? "removed" : "synced" : "pending" } } : {}),
       } satisfies AgendamentoListado;

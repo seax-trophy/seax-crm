@@ -25,16 +25,23 @@ interface AuditMcpToolCallInput {
    */
   resultBytes?: number;
   /**
-   * Vazio DECLARADO pela tool ("não achei"), quando o `success: false` é isso e
-   * não erro técnico. A tool diz qual vazio foi (`motivo`).
+   * O DESFECHO da chamada quando não é sucesso puro:
+   *
+   *   - `sem_resultado` — a tool declarou um vazio ("não achei"), e o `motivo`
+   *     diz qual vazio foi;
+   *   - `recusa` — a ferramenta RECUSOU sem efeito (`{ erro, mensagem }`,
+   *     `{ permitido: false, motivo }`, `{ error }`, `{ ok: false }`), e o
+   *     `motivo` é o CÓDIGO da recusa (`sem_destino`). Sem esta marca a trilha
+   *     afirmava uma mutação que não aconteceu (#4342/#4343).
    *
    * O painel conta a chamada como falha por `metadata->>'success' = 'false'`
    * (`fn_agent_tool_usage`, migration 0103) e não precisa saber mais nada para
    * parar de dizer "nenhuma falha". Estes dois campos são o que separa
-   * "a busca não achou" de "a busca quebrou" no dado gravado; separar os dois na
-   * TELA pede um contador novo naquela função — migration, trabalho do mantenedor.
+   * "a busca não achou" de "a ferramenta recusou" e de "a busca quebrou" no
+   * dado gravado; separar os três na TELA pede um contador novo naquela
+   * função — migration, trabalho do mantenedor.
    */
-  desfecho?: "sem_resultado";
+  desfecho?: "sem_resultado" | "recusa";
   motivo?: string;
   /**
    * O TERMO desta chamada, quando a tool declara um (`termoBuscado`). É o que
@@ -47,6 +54,12 @@ interface AuditMcpToolCallInput {
    * a uma tool que redija os próprios args (`redigirParaAuditoria`).
    */
   termo?: string;
+  /**
+   * A ligação de onde a chamada veio, quando quem chama é o agente de VOZ
+   * (`workers/voice-agent/agenda-da-voz.ts`). Vai em `metadata.voice_call_id`:
+   * é o que separa, na trilha, a marcação feita por telefone da feita por texto.
+   */
+  chamadaDeVoz?: string;
 }
 
 const ARGS_REDACT_KEYS = new Set([
@@ -72,7 +85,7 @@ function redactArgs(args: Record<string, unknown>): Record<string, unknown> {
 }
 
 export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<void> {
-  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, resultBytes, desfecho, motivo, termo } =
+  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, resultBytes, desfecho, motivo, termo, chamadaDeVoz } =
     input;
 
   const metadata: Record<string, unknown> = {
@@ -97,6 +110,7 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
   // O contato da conversa, quando o turno o injetou no ctx (hoje: ferramenta
   // de servidor MCP externo em turno de atendimento, #2147).
   if (ctx.contatoDoTurno) metadata.contact_id = ctx.contatoDoTurno;
+  if (chamadaDeVoz) metadata.voice_call_id = chamadaDeVoz;
   if (ctx.actor.type === "ai_agent" && ctx.actor.api_token_id) {
     metadata.actor_api_token_id = ctx.actor.api_token_id;
   }
@@ -108,7 +122,9 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
     // como actorUserId estourava a FK api_audit_log_actor_user_id_fkey. O ator
     // já fica registrado em actorApiTokenId e em metadata.actor_id.
     actorUserId: null,
-    actorApiTokenId: ctx.apiTokenId,
+    // `||`, não `??`: a ligação de voz não tem token e passa `""`, que a coluna
+    // uuid recusaria — e o insert do audit morreria calado.
+    actorApiTokenId: ctx.apiTokenId || null,
     organizationId: ctx.organizationId,
     resourceType: "mcp_tool",
     // `resource_id` é uuid no banco; o nome da tool ia aqui como texto e o

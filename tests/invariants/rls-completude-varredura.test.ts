@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { sql } from "./gov-helpers";
 import { TABLES } from "./rls-isolation.test";
+
+beforeAll(() => {
+  sql("select public.fn_ouvidoria_provisionar();");
+});
 
 /**
  * VARREDURA de completude de RLS — o buraco que o próprio `rls-isolation.test.ts`
@@ -76,6 +80,11 @@ interface Excecao {
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
   { tabela: "catalog_product_presentations", razao: "tests/invariants/catalogo-apresentacoes-isolamento.test.ts — duas organizações por JWT authenticated: manager nos dois sentidos e agent leem apenas a própria apresentação; UPDATE local de manager positivo, agent e manager vizinho sem efeito; CHECK de ownership do áudio com controle positivo e negativo." },
+  {
+    tabela: "ouvidoria_manifestacoes",
+    razao:
+      "tests/invariants/ouvidoria-registro-privado.test.ts (migration 9040, #3611) — dois tenants reais por JWT: admin lê a manifestação da própria organização e ZERO do vizinho nos dois sentidos; agent e viewer da MESMA organização leem zero (a policy exige admin); authenticated e anon sem insert/update/delete (escrita só pelo service_role, que é o caminho do canal); protocolo único POR organização, forma fechada cobrada por CHECK, e apagar o contato preserva a manifestação (set null). Fica fora de TABLES de propósito: o usuário semeado em rls-isolation.test.ts é `agent`, e o controle positivo desta tabela exige `admin` — lá o caso passaria por ACERTO.",
+  },
   ...["calendar_resources", "calendar_service_schedule", "calendar_service_professionals", "calendar_service_resources", "calendar_service_calendar_sources", "calendar_service_occurrences", "calendar_service_occurrence_resources", "calendar_service_blocks"].map(tabela => ({ tabela, razao: "tests/invariants/agenda-servicos.test.ts — oito tabelas com linhas positivas no tenant próprio, JWT authenticated de duas organizações e contagem zero do vizinho; INSERT/UPDATE/DELETE diretos recusados mesmo para manager. As RPCs mantêm ator, revisão e FKs compostas." })),
   ...["attendant_sectors", "attendant_sector_members"].map(tabela => ({ tabela, razao: "tests/invariants/setores-de-atendimento.test.ts — JWT authenticated de duas organizações: cada uma lê só as próprias linhas (controle positivo nos dois lados); INSERT/DELETE diretos recusados até para manager; FK composta recusa setor de outra organização." })),
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
@@ -424,6 +433,18 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "segredo em bytea com o last4 de 4 caracteres. Guarda a chave Resend que ESCREVE " +
       "e-mail com o domínio do cliente — a correção \"natural\" de TABLES (policy de " +
       "tenant) a exporia pelo PostgREST.",
+  },
+  {
+    tabela: "satisfacao_do_atendimento",
+    razao:
+      "tests/invariants/satisfacao-do-atendimento.test.ts — \"só manager lê a " +
+      "nota — agent e vizinho leem ZERO linhas\" (migration 9352, #4023): " +
+      "`countAs` com JWT real de `manager` lê as linhas da própria " +
+      "organização, o `agent` da mesma organização lê ZERO e o admin da " +
+      "organização vizinha lê ZERO. Fica fora de TABLES de propósito: a " +
+      "policy de leitura é `manager`+ (`satisfacao_so_quem_gerencia_select`) " +
+      "e o usuário semeado em rls-isolation.test.ts é `agent` — o controle " +
+      "positivo falharia por ACERTO ali.",
   },
 ];
 

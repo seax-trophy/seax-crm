@@ -26,6 +26,7 @@ import {
   MOTIVO_COMANDO_OFF,
   pausarIaDuravelmente,
   pausarIaPorAtendimentoManual,
+  type FalhaDaPausa,
 } from "@/lib/escalacao/atendimento-manual";
 import { agenteAceitaComandoDeCelular, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
@@ -34,7 +35,6 @@ import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
-import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
 import { criarIngestDeGrupoDb, gravarMensagemDeGrupo } from "@/lib/grupos/ingest";
 import type { RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
@@ -58,6 +58,27 @@ import {
 import { consumirRespostaDoSuporteNoWhatsApp } from "@/lib/escalacao/resposta-whatsapp-ao-caso";
 
 export type Admin = ReturnType<typeof createAdminClient>;
+
+/**
+ * Aviso durável de que a pausa da IA NÃO foi garantida (#534) — o `#off` e a
+ * resposta manual pelo celular passam por `pausarIaPorAtendimentoManual` com
+ * `avisar`, e é aqui que a
+ * falha fica registrada com motivo nomeado. A ingestão segue (perder mensagem é
+ * pior que duplicar); o que não segue é a mentira de que a IA está pausada.
+ */
+function avisarPausaNaoGravada(falha: FalhaDaPausa): Promise<void> {
+  return audit({
+    action: "ai.pausa_nao_gravada",
+    organizationId: falha.organizationId,
+    resourceType: "conversation",
+    resourceId: falha.conversationId,
+    metadata: {
+      canal: falha.canal ?? "waha",
+      motivo: falha.motivo,
+      detalhe: falha.detalhe ?? null,
+    },
+  });
+}
 
 /**
  * A pausa da IA quando uma pessoa responde pelo celular vive em
@@ -1213,11 +1234,6 @@ async function handleInbound(
   const atribuicao = extrairAtribuicaoWaha(p._data?.message);
   if (atribuicao) await estamparAtribuicaoDoContato(admin, session.organization_id, contactId, atribuicao);
 
-  // Irmão do bloco acima, para o Google: o token vem no PRÓPRIO texto da
-  // mensagem (não há payload de ad-reply equivalente para essa plataforma) —
-  // ver o cabeçalho de `lib/plataformas-de-anuncio/google/atribuicao.ts`. Best-effort.
-  await extrairEEstamparAtribuicaoGoogle(admin, session.organization_id, contactId, texto);
-
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
   if (!conversationId) return;
 
@@ -1816,6 +1832,7 @@ async function handleOutboundFromUserPhone(
         conversationId,
         canal: "waha",
         motivo: MOTIVO_COMANDO_OFF,
+        avisar: avisarPausaNaoGravada,
       });
     } else if (comandoAplicado === "on") {
       const devolucao = await devolverAtendimentoAoAgente(
@@ -1839,11 +1856,13 @@ async function handleOutboundFromUserPhone(
         });
       }
     } else {
+      // #534: o aviso é o que impede a falha da pausa de virar um `false` mudo.
       await pausarIaPorAtendimentoManual(admin, {
         organizationId: session.organization_id,
         conversationId,
         canal: "waha",
         duravel: aceita,
+        avisar: avisarPausaNaoGravada,
       });
     }
     // O comando não é fala de atendimento: esconde do cliente depois de aplicar.
