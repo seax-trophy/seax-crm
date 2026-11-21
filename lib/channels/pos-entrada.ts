@@ -56,6 +56,16 @@ import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-cliq
 import { casarOrigemPorHorario } from "@/lib/leads/origem-por-horario";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
+import { classificarSemInteresse } from "@/lib/opt-out/sem-interesse";
+import { registrarSemInteresse } from "@/lib/lgpd/registrar-sem-interesse";
+import { campanhaDeProspeccaoDaConversa } from "@/lib/lgpd/sem-interesse";
+import {
+  criarTarefaDeRetomada,
+  dentroDaJanelaDaProspeccao,
+  lerJanelaDaProspeccao,
+} from "@/lib/prospecting/resposta-da-prospeccao";
+import { portaDaAplicacao } from "@/lib/db";
+import { encerrarFollowupsDaProspeccao } from "@/lib/followup/encerrar-pela-recusa";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
 import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
@@ -115,6 +125,8 @@ export interface EntradaDeMensagem {
   channelSessionId: string;
   /** O texto que o cliente escreveu — é onde se procura o pedido de saída. */
   texto: string | null;
+  /** Ausente: o canal delega a captura ao pós-entrada. Null: já consultou e não encontrou clique Google. */
+  atribuicaoGoogleDaMensagem?: AtribuicaoDeAnuncio | null;
   /** Nome exibido pelo canal, quando houver. Serve para batizar o card novo. */
   nomeDoContato: string | null;
   /** Correlaciona a linha de auditoria com a request que a originou. */
@@ -167,6 +179,10 @@ export async function aplicarEfeitosPosEntrada(
   }
 
   await aplicarOptOut(admin, entrada);
+  // "Não tenho interesse" na conversa de PROSPECÇÃO vira recusa de marketing (D3).
+  // Depois do PARAR (que, quando casa, já cobre tudo) e ANTES do lead: o passo 2
+  // recusa recriar o card da prospecção que este passo acabou de encerrar.
+  await aplicarSemInteresseDaProspeccao(admin, entrada);
 
   // ── #4023: A RESPOSTA DA PESQUISA DE SATISFAÇÃO ────────────────────────
   //
@@ -471,6 +487,11 @@ export async function aplicarEfeitosDaRecuperacao(
     if (!entrada.optOutJaTratado) {
       await passoDaRecuperacao("opt-out", () => aplicarOptOut(admin, entrada), entrada);
     }
+    await passoDaRecuperacao(
+      "sem-interesse",
+      () => aplicarSemInteresseDaProspeccao(admin, entrada),
+      entrada,
+    );
     if (await ehContatoPessoal(admin, entrada)) {
       logger.info("pos-entrada: recuperação pulada — contato pessoal", {
         organization_id: entrada.organizationId,
@@ -633,10 +654,75 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
       conversation_id: entrada.conversationId,
       campanha: casada.id,
     });
+    // ─── 3º efeito: QUEM responde (#4024) ────────────────────────────────
+    //
+    // A elegibilidade é do CONTATO; a escolha do agente é da CONVERSA. A coluna
+    // é lida por `resolve-turn-agent` (degrau 0b, acima do roteador) em todo
+    // turno desta conversa — decisão do mantenedor (2026-11-05), a mesma regra
+    // da campanha de saída. Só a conversa em que a frase casou é afetada: uma
+    // conversa nova do mesmo contato volta à régua do número, e uma troca
+    // explícita de agente continua possível.
+    if (casada.agent_id !== undefined) {
+      await registrarAgenteDaCampanhaDeEntrada(admin, entrada, casada.agent_id);
+    }
   } catch (err) {
     logger.warn("pos-entrada: avaliação de campanha falhou (o despacho segue)", {
       organization_id: entrada.organizationId,
       conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+  }
+}
+
+/**
+ * 2c · O agente que a campanha de ENTRADA declarou, gravado na CONVERSA (#4024).
+ *
+ * A elegibilidade (`autorizarContatoParaIA` acima) é do contato e é permanente:
+ * `ai_authorized_reason = campanha:<id>` continua respondendo "por que a IA pôde
+ * assumir". Já "quem responde" é outra pergunta, e a resposta vale para ESTA
+ * conversa: por isso o `agent_id` da campanha mora aqui, em
+ * `conversations.campaign_entry_agent_id`, e não numa releitura da `reason`.
+ *
+ * `is("campaign_entry_agent_id", null)` NÃO é preciosismo: a primeira campanha
+ * que casou é a que trouxe o cliente. Uma frase de outro anúncio escrita dias
+ * depois, na mesma conversa, não troca o agente que já abriu o atendimento.
+ *
+ * Best-effort, como o resto do arquivo: falha aqui vira log e o turno segue pelo
+ * agente do número — o lado seguro. A FK composta da 9415 ainda recusa, no
+ * banco, um `agent_id` de OUTRA organização (a coluna nem é gravada, e o
+ * `resolve-turn-agent` não tem como escolhê-lo).
+ */
+async function registrarAgenteDaCampanhaDeEntrada(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+  agentId: string,
+): Promise<void> {
+  try {
+    const { error } = await admin
+      .from("conversations")
+      .update({ campaign_entry_agent_id: agentId })
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.conversationId)
+      .is("campaign_entry_agent_id", null);
+    if (error) {
+      logger.warn("pos-entrada: agente da campanha de entrada NAO gravado (o turno segue pelo número)", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        agent_id: agentId,
+        detail: error.message.slice(0, 160),
+      });
+      return;
+    }
+    logger.info("pos-entrada: conversa marcada com o agente da campanha de entrada", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      agent_id: agentId,
+    });
+  } catch (err) {
+    logger.warn("pos-entrada: agente da campanha de entrada NAO gravado (o turno segue pelo número)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      agent_id: agentId,
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
     });
   }
@@ -678,6 +764,130 @@ async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promi
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
     });
     return false;
+  }
+}
+
+/**
+ * 1b · "Não tenho interesse" numa conversa de PROSPECÇÃO (decisão D3).
+ *
+ * Grava a recusa de marketing (`lib/lgpd/registrar-sem-interesse.ts`) e encerra o
+ * negócio da prospecção. Só na conversa que a prospecção abriu
+ * (`conversations.metadata.prospecting_campaign_id`, gravado em
+ * `lib/prospecting/store.ts`): num atendimento comum a mesma frase é cliente
+ * escolhendo entre ofertas, e nada é gravado.
+ *
+ * E só DENTRO DA JANELA (doc 360 · 1A, `lib/prospecting/resposta-da-prospeccao.ts`):
+ * negócio da prospecção aberto, ou última abordagem há no máximo 30 dias. A marca da
+ * conversa nunca sai, e sem a janela o cliente antigo que diz "não tenho interesse"
+ * sobre outra coisa ganhava recusa permanente.
+ *
+ * O ADIAMENTO ("não tenho interesse agora, me chama mês que vem", doc 360 · 2A) não é
+ * recusa: nada vai para Perdido, o contato segue nas campanhas, e o vendedor ganha uma
+ * tarefa para retomar. O follow-up AUTOMÁTICO da prospecção morre pelo mesmo caminho da
+ * recusa (`encerrarFollowupsDaProspeccao`): quem pediu "me chama mês que vem" não recebe
+ * mais toques, e a retomada é do vendedor. O follow-up de atendimento fica.
+ *
+ * Não é o PARAR e não mexe em `is_blocked`: quem casa o PARAR já foi tratado no
+ * passo 1, e aqui sai sem fazer nada. A consulta da conversa só roda quando a frase
+ * casa — a mensagem comum não paga leitura a mais.
+ *
+ * NUNCA lança: a mensagem já está gravada.
+ */
+async function aplicarSemInteresseDaProspeccao(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+  if (ehPedidoDeOptOut(entrada.texto)) return;
+  const resposta = classificarSemInteresse(entrada.texto);
+  if (!resposta) return;
+  try {
+    const { data, error } = await admin
+      .from("conversations")
+      .select("metadata, assigned_to_user_id")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.conversationId)
+      .maybeSingle();
+    if (error) {
+      logger.warn("pos-entrada: conversa não lida para o 'sem interesse' (nada gravado)", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        detail: error.message.slice(0, 160),
+      });
+      return;
+    }
+    const conversa = data as { metadata?: unknown; assigned_to_user_id?: string | null } | null;
+    const campanhaId = campanhaDeProspeccaoDaConversa(conversa?.metadata);
+    if (!campanhaId) return;
+
+    const janela = await lerJanelaDaProspeccao(
+      admin as unknown as SupabaseClient,
+      entrada.organizationId,
+      entrada.contactId,
+    );
+    if (!janela) {
+      logger.warn("pos-entrada: janela da prospecção não lida para o 'sem interesse' (nada gravado)", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+      });
+      return;
+    }
+    if (!dentroDaJanelaDaProspeccao(janela, Date.now())) {
+      logger.info("pos-entrada: 'sem interesse' fora da janela da prospecção (nada gravado)", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        resposta,
+      });
+      return;
+    }
+
+    if (resposta === "adiamento") {
+      const tarefa = await criarTarefaDeRetomada(portaDaAplicacao(), {
+        organizationId: entrada.organizationId,
+        contactId: entrada.contactId,
+        texto: entrada.texto ?? "",
+        negocio: janela.negocioAberto,
+        atendenteDaConversa: conversa?.assigned_to_user_id ?? null,
+        requestId: entrada.requestId ?? `adiamento:${entrada.conversationId}`,
+      });
+      const followupsEncerrados = await encerrarFollowupsDaProspeccao(admin as unknown as SupabaseClient, {
+        organizationId: entrada.organizationId,
+        contactId: entrada.contactId,
+        conversationId: entrada.conversationId,
+      });
+      const campos = {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        followups_encerrados: followupsEncerrados,
+        ...(tarefa.criada ? { task_id: tarefa.tarefaId } : { motivo: tarefa.motivo }),
+      };
+      if (!tarefa.criada && tarefa.motivo === "falha")
+        logger.error("pos-entrada: adiamento na prospecção sem tarefa de retomada", { ...campos, detail: tarefa.erro });
+      else logger.info("pos-entrada: adiamento na conversa de prospecção — tarefa de retomada", campos);
+      return;
+    }
+
+    const r = await registrarSemInteresse(admin as unknown as SupabaseClient, {
+      organizationId: entrada.organizationId,
+      contactId: entrada.contactId,
+      origem: "conversa_de_prospeccao",
+      actor: ATOR_DO_OPT_OUT,
+      requestId: entrada.requestId ?? `sem-interesse:${entrada.conversationId}`,
+      conversationId: entrada.conversationId,
+      campanhaId,
+    });
+    logger.info("pos-entrada: 'sem interesse' na conversa de prospecção", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      origem: entrada.origem,
+      gravado: r.gravado,
+      ...(r.gravado ? {} : { motivo: r.motivo }),
+      ...("negociosFechados" in r
+        ? { negocios_fechados: r.negociosFechados, followups_encerrados: r.followupsEncerrados }
+        : {}),
+    });
+  } catch (err) {
+    logger.error("pos-entrada: 'sem interesse' NAO gravado — o contato segue elegível a ofertas", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
   }
 }
 
@@ -987,6 +1197,7 @@ async function abrirDemanda(
       messageId: entrada.messageId,
       nomeDoContato: entrada.nomeDoContato,
       origem: origemDoNegocioPeloCanal(entrada.canal),
+      channelSessionId: entrada.channelSessionId,
       ...(atribuicaoDaMensagem ? { atribuicaoDaMensagem } : {}),
     });
 
@@ -1109,18 +1320,11 @@ async function guardarOrigemDaPagina(
   // nascimento do card. Preserva a regra já existente: contato importado ou
   // antigo ainda sem atribuição pode reivindicar o clique; a RPC continua
   // protegendo o primeiro toque e o recibo continua de consumo único.
-  if ((!entrada.canal || entrada.canal === "whatsapp") && PADRAO_DO_REF.test(entrada.texto ?? "")) {
-    try {
-      const atribuicao = await extrairEEstamparAtribuicaoGoogle(
-        admin, entrada.organizationId, entrada.contactId, entrada.texto,
-      );
-      if (atribuicao) return atribuicao;
-    } catch (erro) {
-      logger.error("pos-entrada: atribuição do clique falhou (a mensagem entra assim mesmo)", {
-        contactId: entrada.contactId,
-        error: erro instanceof Error ? erro.message.slice(0, 160) : "desconhecido",
-      });
-    }
+  if (!entrada.canal || entrada.canal === "whatsapp") {
+    const atribuicao = entrada.atribuicaoGoogleDaMensagem === undefined
+      ? await extrairEEstamparAtribuicaoGoogle(admin, entrada.organizationId, entrada.contactId, entrada.texto)
+      : entrada.atribuicaoGoogleDaMensagem;
+    if (atribuicao) return atribuicao;
   }
   const achada = extrairOrigemDaPagina(entrada.texto);
   // O ref não é lido no banco aqui: a leitura CONSOME o clique, e consumir um

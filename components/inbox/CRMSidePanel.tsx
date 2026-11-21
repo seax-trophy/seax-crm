@@ -1,5 +1,6 @@
 "use client";
 
+import { BotaoMarcarSemInteresse } from "@/components/contacts/BotaoMarcarSemInteresse";
 import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { AcervoSearch } from "./AcervoSearch";
@@ -8,6 +9,7 @@ import { AnuncioDoContato, type AnuncioDeOrigem, type AnuncioMaisRecente } from 
 import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import type { ProspectEnrichment } from "@/lib/prospecting/schema";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
+import type { SituacaoDaRecusaDeOfertas } from "@/lib/lgpd/sem-interesse";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { roleAtLeast } from "@/lib/auth/types";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
@@ -35,6 +37,7 @@ import { lerCampoDeMoeda, valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda
 import { MOEDA_PADRAO, formatValorDoNegocio, simboloDaMoeda } from "@/lib/money";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
+import { ChecklistDoCard } from "./ChecklistDoCard";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
 import { NovaTarefaDaConversa } from "./NovaTarefaDaConversa";
 import { FollowupDoContato } from "./FollowupDoContato";
@@ -46,6 +49,8 @@ import {
 } from "@/lib/inbox/modulos-da-lateral";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
+import { BarraDeEtapas } from "@/components/kanban/BarraDeEtapas";
+import { diasNaEtapa } from "@/lib/kanban/barra-de-etapas";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { MoveToOtherPipelineDialog } from "@/components/kanban/MoveToOtherPipelineDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -58,6 +63,9 @@ import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { AtalhosDoNegocio } from "@/components/kanban/AtalhosDoCard";
 import type { AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
+import { VendasDoNegocio } from "@/components/vendas/VendasDoNegocio";
+import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
+import { useVendasDoNegocio } from "@/hooks/vendas/useVendasRegistradas";
 
 interface Props {
   conversation: ConversationWithContact | null;
@@ -95,6 +103,9 @@ interface LeadRow {
   recurring_months?: number | null;
   currency: string | null;
   updated_at: string;
+  /** Entrada na etapa atual e nascimento do negócio: os dias da barra de etapas (`diasNaEtapa`). */
+  stage_changed_at?: string | null;
+  created_at?: string | null;
   pipeline_id: string;
   custom_fields: Record<string, unknown> | null;
   field_defs: CustomFieldDef[];
@@ -522,7 +533,12 @@ function InboxLeadEditor({
           <EtiquetasDoNegocio tags={ativo.tags} />
         </div>
       )}
-      <EtapaDoNegocio key={`etapa-${ativo.id}`} lead={ativo} onMovido={onSalvo} />
+      <EtapaDoNegocio
+        key={`etapa-${ativo.id}`}
+        lead={ativo}
+        onMovido={onSalvo}
+        podeMover={podeLevarParaOutroFunil}
+      />
       <ValorDoNegocio
         key={`valor-${ativo.id}`}
         lead={ativo}
@@ -607,9 +623,25 @@ function ValorDoNegocio({
 }) {
   const t = useT();
   const edit = useEditLead(lead.pipeline_id);
-  const [texto, setTexto] = useState(() =>
-    lead.value_cents == null ? "" : valorDoCampoDeMoeda(lead.value_cents / 100, moeda),
+  // Com venda registrada, o valor é a SOMA das vendas (o banco grava em
+  // `value_cents`, migration 9450): o campo vira leitura e o "+" registra mais.
+  const { data: vendas } = useVendasDoNegocio(lead.id);
+  const vendasDoNegocio = Array.isArray(vendas) ? vendas : [];
+  const valorPelasVendas = vendasDoNegocio.length > 0;
+  const somaDasVendas = vendasDoNegocio.reduce(
+    (soma, v) => soma + (v.currency.toUpperCase() === moeda.toUpperCase() ? v.valor_cents : 0),
+    0,
   );
+  const textoDoBanco = lead.value_cents == null ? "" : valorDoCampoDeMoeda(lead.value_cents / 100, moeda);
+  const [texto, setTexto] = useState(textoDoBanco);
+  // O valor relido entra no campo quando a pessoa não o mexeu: apagar a última
+  // venda devolve o valor digitado (decisão 2B do doc 396), e o campo volta com
+  // ELE, não com a soma que estava em memória.
+  const [textoCarregado, setTextoCarregado] = useState(textoDoBanco);
+  if (textoCarregado !== textoDoBanco) {
+    setTextoCarregado(textoDoBanco);
+    if (texto === textoCarregado) setTexto(textoDoBanco);
+  }
   const [erro, setErro] = useState<string | null>(null);
   // O eco do quadro: dinheiro nunca é interpretado em silêncio.
   const entendido = texto.trim() === "" ? null : lerCampoDeMoeda(texto, moeda);
@@ -642,6 +674,39 @@ function ValorDoNegocio({
         <span className="block text-xs font-medium text-text">{t("Valor do negócio")}</span>
         <p className="text-xs text-muted-foreground" data-testid="inbox-valor-somente-leitura">
           {formatMoney(lead.value_cents, lead.currency)}
+        </p>
+      </div>
+    );
+  }
+
+  const maisVenda = (
+    <BotaoRegistrarVenda
+      leadId={lead.id}
+      titulo={lead.title}
+      moeda={moeda.toUpperCase()}
+      className="size-8 border border-border"
+      testId="inbox-valor-registrar-venda"
+      aoRegistrar={onSalvo}
+    />
+  );
+
+  if (valorPelasVendas) {
+    return (
+      <div className="space-y-1" data-testid="inbox-valor-do-negocio">
+        <span className="block text-xs font-medium text-text">
+          {t("Valor do negócio")} ({simboloDaMoeda(moeda)})
+        </span>
+        <div className="flex items-center gap-1">
+          <p
+            className="flex h-8 flex-1 items-center rounded-md border border-border bg-surface-elevated px-3 text-xs"
+            data-testid="inbox-valor-pelas-vendas"
+          >
+            {formatValorDoNegocio(somaDasVendas, moeda)}
+          </p>
+          {maisVenda}
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          {t("Soma de")} {vendasDoNegocio.length} {t("venda(s) registrada(s)")}
         </p>
       </div>
     );
@@ -683,6 +748,7 @@ function ValorDoNegocio({
         >
           {t("Salvar")}
         </Button>
+        {maisVenda}
       </div>
       {entendido !== null && (
         <p className="text-[10px] text-muted-foreground">= {formatValorDoNegocio(entendido, moeda)}</p>
@@ -703,7 +769,21 @@ function ValorDoNegocio({
  * não move direto: ela pede o motivo, então abre o mesmo `LoseLeadDialog` do
  * quadro (issue #2871).
  */
-function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => void }) {
+function EtapaDoNegocio({
+  lead,
+  onMovido,
+  podeMover,
+}: {
+  lead: LeadRow;
+  onMovido: () => void;
+  /**
+   * Quem clica na BARRA DE ETAPAS move o negócio: `pipeline.move_card` (`agent`+),
+   * a mesma régua do quadro e do "Levar para outro funil" deste painel. Abaixo
+   * disso a barra só mostra. O seletor segue como sempre — a rota de mover cobra
+   * o piso no servidor.
+   */
+  podeMover: boolean;
+}) {
   const t = useT();
   const mover = useBulkAction(lead.pipeline_id);
   const [perdendo, setPerdendo] = useState(false);
@@ -727,6 +807,17 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
 
   return (
     <div className="space-y-1" data-testid="inbox-etapa-do-negocio">
+      {/* A BARRA DE ETAPAS, a mesma do dossiê do quadro: o caminho do negócio
+          no funil, a atual com os dias nela. O clique usa o MESMO `escolher`
+          do seletor abaixo (`/api/v1/leads/bulk`); ganho e perda ficam fora da
+          barra e continuam no seletor, onde a perda pede o motivo. */}
+      <BarraDeEtapas
+        etapaAtual={lead.stage_id}
+        etapas={etapas}
+        podeMover={podeMover && !mover.isPending}
+        onMudar={(stageId) => void escolher(stageId)}
+        dias={diasNaEtapa(lead)}
+      />
       <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
         {t("Etapa do funil")}
       </label>
@@ -963,6 +1054,9 @@ export function CRMSidePanel({
   // botão "abrir o material de origem" no trecho é ESTA, e não a da busca: o
   // painel mostra o nome da fonte a quem só pergunta, e o link a quem abre.
   const podeAbrirAcervo = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "manager");
+  // "MARCAR SEM INTERESSE" (decisão D3): `agent`+, o piso que o
+  // `POST /api/v1/contacts/[id]/sem-interesse` cobra — a mesma régua da ficha.
+  const podeMarcarSemInteresse = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   const localeDaData = useLocaleDeData();
   const t = useT();
   const contact = conversation?.contacts ?? null;
@@ -986,6 +1080,10 @@ export function CRMSidePanel({
   const [fatos, setFatos] = useState<Array<{ id: string; headline: string; body: string }>>([]);
   const [historico, setHistorico] = useState<Array<{ id: string; desfecho: string; fechada_em: string }>>([]);
   const [anuncios, setAnuncios] = useState<{ origem: AnuncioDeOrigem | null; recente: AnuncioMaisRecente | null }>({ origem: null, recente: null });
+  // A recusa de ofertas, decidida no servidor (`crm-summary`). `undefined` = ainda não
+  // lida (ou a leitura falhou): nesse estado o botão NÃO aparece, para não oferecer
+  // gravar uma recusa por cima de outra que a tela não conseguiu ver.
+  const [recusaDeOfertas, setRecusaDeOfertas] = useState<SituacaoDaRecusaDeOfertas | undefined>(undefined);
   const [summaryContactId, setSummaryContactId] = useState<string | null>(null);
   /**
    * O TERCEIRO ESTADO. Antes existiam dois — carregando e "tem N itens" — e a
@@ -1060,6 +1158,7 @@ export function CRMSidePanel({
             historico?: Array<{ id: string; desfecho: string; fechada_em: string }>;
             anuncio_de_origem?: AnuncioDeOrigem | null;
             anuncio_mais_recente?: AnuncioMaisRecente | null;
+            recusa_de_ofertas?: SituacaoDaRecusaDeOfertas;
           };
         }>(`/api/v1/contacts/${contactId}/crm-summary`);
         if (cancelled) return;
@@ -1089,6 +1188,7 @@ export function CRMSidePanel({
         setDemandas(r.data.demandas ?? []);
         setFatos(r.data.fatos ?? []); setHistorico(r.data.historico ?? []);
         setAnuncios({ origem: r.data.anuncio_de_origem ?? null, recente: r.data.anuncio_mais_recente ?? null });
+        setRecusaDeOfertas(r.data.recusa_de_ofertas);
       } catch {
         if (cancelled) return;
         // Falha NÃO vira lista vazia. Os dados ficam `null` e o painel diz que
@@ -1100,6 +1200,7 @@ export function CRMSidePanel({
         setDemandas(null);
         setFatos([]); setHistorico([]);
         setAnuncios({ origem: null, recente: null });
+        setRecusaDeOfertas(undefined);
       }
     }
 
@@ -1230,6 +1331,9 @@ export function CRMSidePanel({
             {contact?.contact_type === "fornecedor" && (
               <Badge variant="secondary">{t("Fornecedor")}</Badge>
             )}
+            {summaryContactId === contactId && recusaDeOfertas === "sem_interesse" && (
+              <Badge variant="secondary">{t("Sem interesse em ofertas")}</Badge>
+            )}
           </div>
           {contact?.phone_number && (
             <div className="text-xs text-muted-foreground">{phoneForDisplay(contact.phone_number)}</div>
@@ -1269,6 +1373,17 @@ export function CRMSidePanel({
                 {t("Nova tarefa")}
               </Button>
             )}
+            {/*
+              "MARCAR SEM INTERESSE" (decisão D3): o "não" que chegou por áudio, ligação ou
+              outra conversa, marcado sem sair do Inbox. O mesmo componente da ficha (o
+              texto da confirmação não diverge). Só com a recusa LIDA e ausente: com
+              recusa de qualquer origem, ou sem conseguir ler, o botão não aparece.
+              Depois de marcar, o painel relê o resumo (o negócio foi para Perdido).
+            */}
+            {contactId && !readonly && podeMarcarSemInteresse && !contact?.is_anonymized &&
+              summaryContactId === contactId && !erro && recusaDeOfertas === null && (
+                <BotaoMarcarSemInteresse contactId={contactId} compacto onMarcado={recarregar} />
+              )}
             {contactId && (
               <Button asChild size="sm" variant="ghost" className="h-11 px-2 text-xs lg:h-7">
                 <Link href={`/app/contacts/${contactId}`}>
@@ -1429,12 +1544,19 @@ export function CRMSidePanel({
        a seção mostra as tarefas abertas do contato (#4630). Só a demanda vigente AINDA ABERTA
        (`current_demanda_id` continua apontando depois de "Encerrar demanda"). */
     tarefas: (
-      <TarefasDaDemanda
-        demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
-        contactId={contactId}
-        leadId={negocioAtivoId}
-        podeEditar={podeCriarTarefa}
-      />
+      <>
+        {/* O CHECKLIST DO CARD (#4717, FASE 1): o plano aplicado como lista
+            única do negócio, com estado, autor e progresso. Vem ANTES da lista
+            de tarefas porque é a visão do atendimento inteiro — a tarefa é o
+            item dela. A seção se auto-oculta quando nenhum plano foi aplicado. */}
+        <ChecklistDoCard leadId={negocioAtivoId} podeEditar={podeCriarTarefa} />
+        <TarefasDaDemanda
+          demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
+          contactId={contactId}
+          leadId={negocioAtivoId}
+          podeEditar={podeCriarTarefa}
+        />
+      </>
     ),
 
     /* O FOLLOW-UP NA CONVERSA (#3178): a seção se AUTO-OCULTA quando não há
@@ -1489,7 +1611,12 @@ export function CRMSidePanel({
         {sectionsLoading ? (
           <Skeleton className="mt-2 h-14 w-full" />
         ) : leads && leads.length > 0 ? (
-          <fieldset disabled={readonly}><InboxLeadEditor
+          /* `min-w-0`: o `fieldset` nasce com `min-width: min-content` (padrão
+             do navegador) e repassaria a largura da faixa em nowrap da barra de
+             etapas para a `aside`, que rolaria de lado inteira. Com ele, quem
+             rola é só a faixa (`BarraDeEtapas`). */
+          <>
+          <fieldset disabled={readonly} className="min-w-0"><InboxLeadEditor
             leads={leads}
             selecionadoId={leadAtivoId}
             onSelecionar={setLeadAtivoId}
@@ -1499,6 +1626,29 @@ export function CRMSidePanel({
             moedaDaOrg={activeOrg?.currency ?? MOEDA_PADRAO}
             onTrocouDeNegocio={aoTrocarDeNegocio}
           /></fieldset>
+          {/* As VENDAS do negócio ativo (Orken CRM): registrar a compra daqui,
+              sem sair da conversa. Mesma seção do negócio aberto no funil. */}
+          {negocioAtivoId && (
+            <div className="mt-3" data-testid="inbox-vendas">
+              <h4 className="mb-1 text-xs font-semibold text-text">{t("Vendas")}</h4>
+              <VendasDoNegocio
+                leadId={negocioAtivoId}
+                titulo={leads.find((l) => l.id === negocioAtivoId)?.title ?? null}
+                moeda={(
+                  leads.find((l) => l.id === negocioAtivoId)?.currency ??
+                  activeOrg?.currency ??
+                  MOEDA_PADRAO
+                ).toUpperCase()}
+                // Apagar venda é `agent`+, o mesmo piso do campo Valor ao lado
+                // (`podeEditarValor`): com `readonly` sozinho, o viewer via a lixeira
+                // e levava 403 ao clicar (prova pela tela do #5087).
+                somenteLeitura={readonly || !podeEditarValor}
+                semRegistrar
+                aoMudar={recarregar}
+              />
+            </div>
+          )}
+          </>
         ) : (
           <SemLista
             vazio={t("Sem negócios.")}
